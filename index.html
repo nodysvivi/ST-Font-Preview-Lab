@@ -839,7 +839,7 @@ function clearCard(silent) {
   if (!silent && (files.length || items.length) && !confirm('Xóa card/script đang nạp? (Không ảnh hưởng file gốc trên máy)')) return;
   files.length = 0;
   items.length = 0;
-  cardMeta = null; labWBReset(null); selIdx = null; ov = {}; G = []; fontHist = []; updFontUndo(); tgt = ''; tgtAuto = true; fontSrc = null;
+  cardMeta = null; labWBReset(null); selIdx = null; ov = {}; ids.clear(); G = []; fontHist = []; updFontUndo(); tgt = ''; tgtAuto = true; fontSrc = null;
   $('#card-badge').hidden = true;
   resetFloors();
   const fr = $('#fr');
@@ -1219,16 +1219,95 @@ function loadMiraMockData(silent = false) {
 /* ================= FONT ĐÃ SỬA · TẢI RIÊNG ================= */
 const ICON_GEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>';
 const ICON_DL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>';
+// [tên gốc đại diện, font mới, danh sách tên trong stack gốc] — khớp theo CẢ stack, không thay chuỗi thô
 function fontPairs() {
-  return Object.entries(ov)
-    .map(([st, nw]) => [names(st).find(n => !GEN.includes(n.toLowerCase())), nw])
-    .filter(([o, n]) => o && o !== n);
+  return Object.entries(ov).map(([st, nw]) => {
+    const ns = names(st);
+    const o = ns.find(n => !GEN.includes(n.toLowerCase())) || ns[0];
+    return [o, nw, ns];
+  }).filter(([o, n]) => o && n && o.toLowerCase() !== n.toLowerCase());
 }
-// các cặp (gốc → mới) thực sự nằm trong mã của mục này
+const sameStack = (a, b) => a.length === b.length && a.every((x, i) => x.toLowerCase() === b[i].toLowerCase());
+const fontIdent = n => n.split(/\s+/).every(w => /^-?[A-Za-z_][\w-]*$/.test(w));   // viết trần được (kể cả nhiều từ)
+// Các dấu nháy đang mở trên dòng trước vị trí chèn (chuỗi JS, attribute HTML...)
+function openQuotes(prefixTxt) {
+  const line = prefixTxt.slice(prefixTxt.lastIndexOf('\n') + 1);
+  const st = [];
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '\\') { i++; continue; }
+    if (c === '"' || c === "'") { if (st[st.length - 1] === c) st.pop(); else st.push(c); }
+  }
+  return new Set(st);
+}
+// Chèn font mới vào ĐẦU các stack khớp trong khai báo font-family / font: / mọi custom property (--body, --mono...);
+// hiểu var(--x) và dấu nháy thoát \" trong chuỗi JS. Giữ nguyên fallback gốc.
+function patchFontDecls(txt, pairs) {
+  const used = new Set();
+  const Q = '(?:\\\\?"[^"\\\\\n<>;=`]{1,60}\\\\?"|\\\\?\'[^\'\\\\\n<>;=`]{1,60}\\\\?\'|[^;}"\'`]){0,600}';
+  const unesc = v => v.replace(/\\(["'])/g, '$1');
+  // Định nghĩa custom property trong chính text, để mở rộng var(--x) khi so sánh stack
+  const defs = new Map();
+  for (const m of txt.matchAll(new RegExp('(?<![\\w-])(--[\\w-]+)\\s*:\\s*(' + Q + ')', 'g'))) {
+    const v = unesc(m[2]).replace(/!important/gi, '').trim();
+    if (!v || /\$\{/.test(v)) continue;
+    const a = defs.get(m[1]) || []; if (!a.includes(v) && a.length < 6) a.push(v); defs.set(m[1], a);
+  }
+  const expand = (v, depth) => {
+    const m = /var\(\s*(--[\w-]+)\s*(?:,[^)]*)?\)/.exec(v);
+    if (!m || depth > 3) return [v];
+    const c = defs.get(m[1]);
+    if (!c) return expand(v.replace(m[0], () => ''), depth + 1);
+    const res = [];
+    for (const d of c) for (const e of expand(v.replace(m[0], () => d), depth + 1)) { res.push(e); if (res.length >= 8) return res; }
+    return res;
+  };
+  const fix = (prefixTxt, val, avoid) => {
+    if (/\$\{/.test(val)) return null;
+    const core = unesc(val).replace(/!important/gi, '').trim();
+    if (!core || /^var\(\s*--[\w-]+\s*(?:,[^)]*)?\)$/.test(core)) return null;   // chỉ tham chiếu var(): để định nghĩa của biến lo
+    const cands = expand(core, 0).map(names).filter(a => a.length);
+    if (!cands.length) return null;
+    const first = (names(core)[0] || '').toLowerCase();
+    for (let k = 0; k < pairs.length; k++) {
+      const [, nw, st] = pairs[k];
+      if (!cands.some(ns => sameStack(ns, st))) continue;
+      used.add(k);
+      if (first === nw.toLowerCase()) return null;
+      let tok = nw;
+      if (!fontIdent(nw)) {
+        let q;
+        if (/\\["']/.test(val)) q = '\\"';
+        else {
+          const open = openQuotes(prefixTxt);
+          const pref = val.includes('"') ? ["'", '"'] : ['"', "'"];
+          q = pref.find(c => !open.has(c) && c !== avoid);
+          if (!q) { used.delete(k); return null; }   // cả hai loại nháy đều đang mở: không chèn để khỏi vỡ JS/HTML
+        }
+        tok = q + nw + q;
+      }
+      return tok + ', ' + val.replace(/^\s+/, '');
+    }
+    return null;
+  };
+  const run = (txt0, re, attrQ) => txt0.replace(re, (full, pre, val, off) => {
+    const r = fix(txt0.slice(Math.max(0, off - 300), off), val, attrQ && attrQ(pre));
+    return r == null ? full : pre + r;
+  });
+  let out = run(txt, new RegExp('((?<![\\w-])font-family\\s*:\\s*)(' + Q + ')', 'gi'));
+  out = run(out, new RegExp('((?<![\\w-])--[\\w-]+\\s*:\\s*)(' + Q + ')', 'gi'));
+  out = run(out, new RegExp('((?<![\\w-])font\\s*:\\s*[^;}\\n]*?\\d+(?:\\.\\d+)?(?:px|rem|em|pt|vw|vh|vmin|vmax|ch|ex|cqw|cqh|%)(?![a-z])(?:\\s*\\/\\s*[\\w.%]+)?\\s+)(' + Q + ')', 'gi'));
+  // Thuộc tính SVG/HTML: font-family="..." (kể cả dạng thoát \" trong chuỗi JS)
+  out = run(out, /((?<![\w-])font-family\s*=\s*\\?["'])([^"'\\\n<>=`]{1,200})/gi, pre => pre.slice(-1));
+  return { out, used };
+}
+// các cặp (gốc → mới) thực sự được áp dụng trong mã của mục này
 function itemChanges(it) {
   const txt = it && it.o && it.o[fld(it)];
   if (typeof txt !== 'string' || !txt) return [];
-  return fontPairs().filter(([o]) => txt.includes(o));
+  const pairs = fontPairs();
+  const { used } = patchFontDecls(txt, pairs);
+  return pairs.filter((_, k) => used.has(k));
 }
 let dlIdx = null;
 function openDlSheet(idx) {
@@ -2208,16 +2287,15 @@ function names(s) { return s.split(',').map(x => x.trim().replace(/^["']|["']$/g
 
 function checkVietnameseSupport(fontName) {
   if (GEN.includes(fontName.toLowerCase())) return true;
-  const cv = document.createElement('canvas');
-  const ctx = cv.getContext('2d');
-  const vnSample = 'ắựỗệảủđĐ';
-  return ['monospace', 'serif', 'sans-serif'].some(base => {
-    ctx.font = `48px ${base}`;
-    const baseVn = ctx.measureText(vnSample).width;
-    ctx.font = `48px "${fontName}", ${base}`;
-    const testVn = ctx.measureText(vnSample).width;
-    return testVn !== baseVn;
-  });
+  const meta = FONTS.find(x => x.f.toLowerCase() === fontName.toLowerCase());
+  if (meta && typeof meta.vn === 'boolean') return meta.vn;   // Google Fonts API: chính xác
+  // Font hệ thống: đo TỪNG ký tự so với font nền; coi là hỗ trợ nếu đa số ký tự có glyph riêng
+  const ctx = document.createElement('canvas').getContext('2d');
+  const chars = [...'ắựỗệảủđĐấờ'];
+  const w = (font, c) => { ctx.font = font; return ctx.measureText(c).width; };
+  const bases = ['monospace', 'serif', 'sans-serif'];
+  const hit = chars.filter(c => bases.some(b => w(`48px "${fontName}", ${b}`, c) !== w(`48px ${b}`, c))).length;
+  return hit >= Math.ceil(chars.length * 0.7);
 }
 
 function getAllTargetDocs() {
@@ -2232,7 +2310,15 @@ function getAllTargetDocs() {
   return docs;
 }
 
-const gfUrl = n => 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(n).replace(/%20/g, '+') + '&display=swap';
+// Trục wght thực có của font (chỉ khi font nằm trong danh sách API có variants). Font gõ tay/không rõ → không gắn để tránh lỗi 400.
+function gfWght(n) {
+  const meta = FONTS.find(x => x.f.toLowerCase() === String(n).toLowerCase());
+  if (!meta || !Array.isArray(meta.v)) return '';
+  const nums = [...new Set(meta.v.map(v => v === 'regular' ? '400' : /^\d{3}$/.test(v) ? v : null).filter(Boolean))].sort();
+  return nums.length > 1 ? ':wght@' + nums.join(';') : '';
+}
+// plain=true: chỉ nét 400 (dùng cho danh sách xem trước, nhẹ hơn)
+const gfUrl = (n, plain) => 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(n).replace(/%20/g, '+') + (plain ? '' : gfWght(n)) + '&display=swap';
 
 function injectFontAndOverrides(doc) {
   Object.values(ov).forEach(n => {
@@ -2262,6 +2348,48 @@ function hlRule() {
 function applyHighlight() { getAllTargetDocs().forEach(injectFontAndOverrides); }
 
 let ids = new Map();
+
+/* --- Theo dõi DOM động: nút/khối card tạo SAU lúc quét (mở rộng/thu gọn, render lại, gõ chữ...) cũng được gắn nhóm font --- */
+const obsDocs = new WeakSet();
+const pendEls = new Set();
+let tagTimer = 0, lateScanTimer = 0;
+function hasDirectText(e) { for (const n of e.childNodes) if (n.nodeType === 3 && n.textContent.trim()) return true; return false; }
+function tagPending() {
+  tagTimer = 0;
+  const live = new Set(getAllTargetDocs());
+  let needFull = false;
+  for (const e of pendEls) {
+    pendEls.delete(e);
+    const d = e.ownerDocument;
+    if (!live.has(d) || !e.isConnected || e.dataset.fi !== undefined || !hasDirectText(e)) continue;
+    if (e.matches('script,style') || !e.closest('body')) continue;
+    const s = e.dataset.fo || (e.dataset.fo = d.defaultView.getComputedStyle(e).fontFamily);
+    if (!ids.has(s)) { needFull = true; continue; }          // stack mới chưa có trong bảng nhóm → quét đầy đủ
+    e.dataset.fi = ids.get(s);
+    const r = G.find(x => x.s === s); if (r) r.els.push(e);
+  }
+  if (needFull) scan();
+}
+function queueEl(e) {
+  if (!e || e.nodeType !== 1) return;
+  pendEls.add(e);
+  e.querySelectorAll('*').forEach(c => pendEls.add(c));
+  if (e.tagName === 'IFRAME' || e.querySelector('iframe')) {   // iframe mới: nội dung nạp muộn → quét lại sau
+    clearTimeout(lateScanTimer);
+    lateScanTimer = setTimeout(() => { scan(); setTimeout(scan, 1500); }, 800);
+  }
+}
+function watchDoc(d) {
+  if (!d || !d.body || obsDocs.has(d)) return;
+  obsDocs.add(d);
+  new d.defaultView.MutationObserver(recs => {
+    for (const r of recs) {
+      if (r.type === 'characterData') { if (r.target.parentElement) pendEls.add(r.target.parentElement); }
+      else { queueEl(r.target); r.addedNodes.forEach(queueEl); }
+    }
+    if (pendEls.size && !tagTimer) tagTimer = setTimeout(tagPending, 200);
+  }).observe(d.body, { childList: true, subtree: true, characterData: true });   // không theo dõi attributes → không tự kích hoạt lại
+}
 function scan() {
   const docs = getAllTargetDocs();
   if (!docs.length) return;
@@ -2290,6 +2418,7 @@ function scan() {
       r.els.push(e);
     });
     injectFontAndOverrides(d);
+    watchDoc(d);
   });
 
   G = [...g.values()].sort((a, b) => b.els.length - a.els.length).map(x => {
@@ -2358,7 +2487,14 @@ function itemFontSet(it) {
     set.add(first.toLowerCase());
   };
   for (const m of txt.matchAll(/font-family\s*:\s*([^;}\n]*)/gi)) addStack(m[1]);
-  for (const m of txt.matchAll(/--[\w-]*font[\w-]*\s*:\s*([^;}\n]*)/gi)) addStack(m[1]);
+  for (const m of txt.matchAll(/--[\w-]+\s*:\s*([^;}\n]*)/gi)) {   // --body / --mono / --font-x ...: chỉ nhận khi giá trị là stack có font chung
+    const v = m[1].replace(/\\+["']/g, '"');
+    if (/var\(/.test(v) || names(v.replace(/!important/gi, '')).some(n => GEN.includes(n.toLowerCase()))) addStack(v);
+  }
+  for (const m of txt.matchAll(/(?<![\w-])font\s*:\s*([^;}\n]*)/gi)) {   // shorthand: font: 15px/1.6 "Roboto", sans-serif
+    const k = /\d+(?:\.\d+)?(?:px|rem|em|pt|vw|vh|vmin|vmax|ch|ex|cqw|cqh|%)(?![a-z])(?:\s*\/\s*[\w.%]+)?\s+(.+)$/i.exec(m[1]);
+    if (k) addStack(k[1]);
+  }
   for (const m of txt.matchAll(/family=([^&:"'\s\\)]+)/g)) { try { addStack(decodeURIComponent(m[1].replace(/\+/g, ' '))); } catch {} }
   it._ff = { t: txt, set };
   return set;
@@ -2466,7 +2602,7 @@ async function fetchFonts() {
     try {
       const res = await fetch('https://www.googleapis.com/webfonts/v1/webfonts?key=' + encodeURIComponent(key) + '&subset=vietnamese&sort=popularity');
       const j = await res.json();
-      if (j.items) { FONTS = j.items.map(x => ({ f: x.family, c: x.category })); renderFontList(); return; }
+      if (j.items) { FONTS = j.items.map(x => ({ f: x.family, c: x.category, v: x.variants || ['regular'], vn: Array.isArray(x.subsets) && x.subsets.includes('vietnamese') })); renderFontList(); return; }
     } catch {}
   }
   FONTS = FB.split('|').flatMap(g => { const [c, l] = g.split(':'); return l.split(',').map(f => ({ f, c })); });
@@ -2483,7 +2619,7 @@ function renderFontList() {
   filtered.slice(0, vis).forEach(x => {
     if (!glLoaded.has(x.f)) {
       glLoaded.add(x.f);
-      const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = gfUrl(x.f);
+      const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = gfUrl(x.f, true);
       document.head.appendChild(l);
     }
     const d = document.createElement('div');
@@ -2504,7 +2640,7 @@ $('#ft').oninput = renderFontList;
 
 /* ================= EXPORT ================= */
 function loaderFor(list) {
-  return `/* ST Preview Lab: tải font */\n;(()=>{try{const D=(window.parent||window).document;${JSON.stringify(list)}.forEach(n=>{const id="gf-"+n.replace(/\\W+/g,"-");if(D.getElementById(id))return;const l=D.createElement("link");l.id=id;l.rel="stylesheet";l.href="https://fonts.googleapis.com/css2?family="+encodeURIComponent(n).replace(/%20/g,"+")+"&display=swap";D.head.append(l)})}catch(e){}})();\n`;
+  return `/* ST Preview Lab: tải font */\n;(()=>{try{const D=(window.parent||window).document;const W=${JSON.stringify(Object.fromEntries(list.map(n => [n, gfWght(n)])))};${JSON.stringify(list)}.forEach(n=>{const id="gf-"+n.replace(/\\W+/g,"-");if(D.getElementById(id))return;const l=D.createElement("link");l.id=id;l.rel="stylesheet";l.href="https://fonts.googleapis.com/css2?family="+encodeURIComponent(n).replace(/%20/g,"+")+(W[n]||"")+"&display=swap";D.head.append(l)})}catch(e){}})();\n`;
 }
 
 function applyFontOverridesToObject(obj, pairs) {
@@ -2513,13 +2649,9 @@ function applyFontOverridesToObject(obj, pairs) {
   const patchText = (txt, isScript) => {
     if (typeof txt !== 'string') return txt;
     const need = new Set();
-    let out = txt;
-    pairs.forEach(([oldName, newName]) => {
-      if (out.includes(oldName)) {
-        out = out.split(oldName).join(newName);
-        need.add(newName);
-      }
-    });
+    const r = patchFontDecls(txt, pairs);
+    let out = r.out;
+    r.used.forEach(k => need.add(pairs[k][1]));
     if (!need.size) return out;
     if (isScript) {
       const m = /\/\* ST Preview Lab: tải font \*\/\n;\(\(\)=>\{try\{const D=[^\n]*?(\[[^\]]*\])\.forEach[^\n]*\n/.exec(out);
@@ -2528,7 +2660,11 @@ function applyFontOverridesToObject(obj, pairs) {
     } else {
       const links = [...need].map(n => {
         const u = gfUrl(n);
-        return out.includes(u) ? '' : `<link rel="stylesheet" href="${u}"/>`;
+        if (out.includes(u)) return '';
+        const nameRe = encodeURIComponent(n).replace(/%20/g, '+').replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\+/g, '(?:\\+|%20)');
+        const oldRe = new RegExp('<link\\b[^>]*fonts\\.googleapis\\.com/css2\\?[^>]*family=' + nameRe + '(?=[:&"\'\\s])[^>]*>\\s*', 'gi');
+        out = out.replace(oldRe, t => (t.match(/family=/gi) || []).length === 1 ? '' : t);   // chỉ gỡ link chỉ chứa đúng font này
+        return `<link rel="stylesheet" href="${u}"/>`;
       }).join('');
       if (links) {
         if (/<head\b[^>]*>/i.test(out)) out = out.replace(/<head\b([^>]*)>/i, `<head$1>${links}`);
@@ -2556,20 +2692,13 @@ function applyFontOverridesToObject(obj, pairs) {
 
 function exportAll() {
   if (!files.length) return toast('Chưa có file nào để xuất.', true);
-  const pairs = Object.entries(ov)
-    .map(([st, nw]) => [names(st).find(n => !GEN.includes(n.toLowerCase())), nw])
-    .filter(([o, n]) => o && o !== n);
-
+  const pairs = fontPairs();
   const addedTotal = new Set();
-  files.forEach(f => {
+  files.forEach((f, i) => {
     const clone = JSON.parse(JSON.stringify(f.j));
-    const added = applyFontOverridesToObject(clone, pairs);
-    added.forEach(x => addedTotal.add(x));
-    const blob = new Blob([JSON.stringify(clone, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = f.name.replace(/\.(json|png)$/i, '') + '.fixed.json';
-    a.click();
+    applyFontOverridesToObject(clone, pairs).forEach(x => addedTotal.add(x));
+    const name = f.name.replace(/\.(json|png)$/i, '') + '.fixed.json';
+    setTimeout(() => saveBlob(JSON.stringify(clone, null, 2), name, 'application/json'), i * 400);  // giãn cách để Chrome Android không chặn tải nhiều file
   });
   log('Đã xuất ' + files.length + ' file JSON an toàn. ' + (addedTotal.size ? 'Đã thêm Google Fonts: ' + [...addedTotal].join(', ') : ''), 'ok');
   toast('Đã xuất xong JSON!');
@@ -2579,14 +2708,8 @@ function exportSingleItem() {
   if (selIdx === null || !items[selIdx]) return;
   const it = items[selIdx];
   const clone = JSON.parse(JSON.stringify(it.o));
-  const pairs = Object.entries(ov)
-    .map(([st, nw]) => [names(st).find(n => !GEN.includes(n.toLowerCase())), nw])
-    .filter(([o, n]) => o && o !== n);
-  applyFontOverridesToObject(clone, pairs);
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(clone, null, 2)], { type: 'application/json' }));
-  a.download = (nm(it).replace(/[^\w\u00C0-\u1EF9-]+/g, '_') || 'item') + '.json';
-  a.click();
+  applyFontOverridesToObject(clone, fontPairs());
+  saveBlob(JSON.stringify(clone, null, 2), (nm(it).replace(/[^\w\u00C0-\u1EF9-]+/g, '_') || 'item') + '.json', 'application/json');
   toast('Đã tải riêng: ' + nm(it));
 }
 
