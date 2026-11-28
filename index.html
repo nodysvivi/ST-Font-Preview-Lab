@@ -262,8 +262,21 @@ button.pri{border-radius:10px;min-height:38px}
 #warnA.ok .dot{background:#6b6e7a}
 #warnA.ok button{color:var(--text)}
 
-#zoomBtn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--border);font-size:12px;font-weight:500}
-#zoomBtn[aria-expanded=true]{border-color:var(--accent);color:var(--accent)}
+#zoomBtn,#btnBtn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--border);font-size:12px;font-weight:500}
+#zoomBtn[aria-expanded=true],#btnBtn[aria-expanded=true]{border-color:var(--accent);color:var(--accent)}
+.pvtools{display:flex;gap:8px;align-items:center}
+#btnBtnN{min-width:16px;padding:0 5px;border-radius:99px;background:var(--bg);font-size:10px;line-height:16px;text-align:center;color:var(--muted)}
+#btnBtn.has #btnBtnN{background:var(--accent);color:#101114;font-weight:700}
+#btnPop{display:none;position:absolute;z-index:8;top:54px;left:12px;right:12px;max-height:min(62vh,440px);overflow:auto;flex-direction:column;gap:12px;padding:12px;border-radius:12px;background:var(--panel2);border:1px solid var(--border);box-shadow:0 10px 30px rgba(0,0,0,.45)}
+#btnPop.on{display:flex}
+#btnPop .bp-name{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#btnPop .bp-row{display:flex;flex-wrap:wrap;gap:6px}
+#btnPop .bp-btn{min-height:40px;padding:0 14px;border-radius:10px;font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg)}
+#btnPop .bp-btn:hover,#btnPop .bp-btn:active{border-color:var(--accent);color:var(--accent)}
+#btnPop .bp-hid{margin-top:8px}
+#btnPop .bp-hid summary{font-size:11.5px;color:var(--muted);cursor:pointer;margin-bottom:6px}
+#btnPop .bp-hid .bp-btn{opacity:.65;border-style:dashed}
+#btnPop .bp-empty{font-size:12px;color:var(--muted);line-height:1.5;padding:4px 2px}
 #zoomPop{display:none;position:absolute;z-index:7;top:54px;left:12px;right:12px;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:var(--panel2);border:1px solid var(--border);box-shadow:0 10px 30px rgba(0,0,0,.45)}
 #zoomPop.on{display:flex}
 #zoomPop button{min-height:44px;min-width:44px;border-radius:10px;font-size:16px;padding:0 10px}
@@ -422,7 +435,8 @@ button.pri{border-radius:10px;min-height:38px}
     </div>
 
     <div id="view-pane" class="preview-wrap">
-      <div class="pvhead"><span>Khung xem trước</span><button id="zoomBtn" type="button" aria-expanded="false" aria-controls="zoomPop"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5M11 8.5v5M8.5 11h5"/></svg><span id="zoomBtnT">100%</span></button></div>
+      <div class="pvhead"><span>Khung xem trước</span><div class="pvtools"><button id="btnBtn" type="button" aria-expanded="false" aria-controls="btnPop" title="Danh sách nút script (trường button của Tavern Helper) — bấm để kích hoạt thay vì chọn trong thanh nút của SillyTavern"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3.5" y="4" width="17" height="6" rx="2"/><rect x="3.5" y="14" width="10" height="6" rx="2"/><path d="M17 15.5v4M15 17.5h4"/></svg><span>Nút</span><span id="btnBtnN">0</span></button><button id="zoomBtn" type="button" aria-expanded="false" aria-controls="zoomPop"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5M11 8.5v5M8.5 11h5"/></svg><span id="zoomBtnT">100%</span></button></div></div>
+      <div id="btnPop" role="group" aria-label="Nút script của card"></div>
       <div id="zoomPop" role="group" aria-label="Thu phóng khung xem"><button type="button" aria-label="Thu nhỏ" data-z="-5">−</button><input id="zoomR" type="range" min="40" max="150" step="5" value="100" aria-label="Mức thu phóng"><button type="button" aria-label="Phóng to" data-z="5">+</button><button type="button" id="zoomReset">Đặt lại</button></div>
       <div id="empty" class="empty-overlay">
         <div style="font-size:44px">🎴</div>
@@ -828,6 +842,7 @@ async function loadFiles(fileList) {
       if (firstUI) $('#msg').value = guessSampleForItem(firstUI);
     }
     renderItemList();
+    labBtnInit();
     render();
   }
 }
@@ -848,6 +863,7 @@ function clearCard(silent) {
   fr.src = 'about:blank';
   $('#empty').classList.remove('hidden');
   renderItemList();
+  labBtnInit();
   try { renderFontDock(); } catch (_) {}
   log('Đã xóa card/script đang nạp', 'ok');
 }
@@ -1536,6 +1552,26 @@ function buildSubIframeRuntimeScript() {
   try {
     var P = window.parent;
     if (P) {
+      // Nút script: gắn theo đúng script này (iframe script có data-lab-sid), giống getButtonEvent/getScriptButtons của Tavern Helper
+      var SID = '';
+      try { SID = (window.frameElement && window.frameElement.dataset && window.frameElement.dataset.labSid) || ''; } catch(e) {}
+      if (SID && P.__labBtn) {
+        var LB = P.__labBtn;
+        var setBtns = function(a, b) { LB.replace(SID, Array.isArray(a) ? a : b); };
+        window.getButtonEvent = function(n) { return LB.event(SID, n); };
+        window.getScriptButtons = function() { return LB.get(SID); };
+        window.replaceScriptButtons = setBtns;
+        window.updateScriptButtonsWith = function(f) {
+          var r = f(LB.get(SID));
+          if (r && typeof r.then === 'function') return r.then(function(x) { LB.replace(SID, x); return x; });
+          LB.replace(SID, r); return r;
+        };
+        window.appendInexistentScriptButtons = function(a, b) {
+          var add = Array.isArray(a) ? a : b, cur = LB.get(SID);
+          LB.replace(SID, cur.concat((add || []).filter(function(x) { return !cur.some(function(c) { return c.name === x.name; }); })));
+        };
+        window.eventOnButton = function(n, f) { return P.eventOn(LB.event(SID, n), f); };
+      }
       if (P.z && !window.z) window.z = P.z;
       if (P.YAML && !window.YAML) window.YAML = P.YAML;
       if (P._ && !window._) window._ = P._;
@@ -1637,6 +1673,54 @@ function parseContentToDomNodes(processedText, doc) {
     appendInlineHtmlOrText(processedText.slice(lastIdx));
   }
   return frag;
+}
+
+/* ================= NÚT SCRIPT (trường "button" của Tavern Helper) ================= */
+// Thanh nút của ST thật hiển thị các nút visible của script đã bật; bấm nút => phát sự kiện getButtonEvent(tên nút) vào script.
+// Lab: danh sách này nằm ở nút "Nút" cạnh nút thu phóng. Sự kiện gắn theo từng script (sid) nên 2 script trùng tên nút không lẫn nhau.
+const labBtn = { list: [] };   // [{ sid, name, enabled, buttons: [{ name, visible }] }]
+function labBtnInit() {
+  labBtn.list = [];
+  items.forEach((it, i) => {
+    if (it.k !== 'script' || !it.on) return;
+    const b = it.o.button || {};
+    labBtn.list.push({
+      sid: 's' + i, name: nm(it), enabled: b.enabled !== false,
+      buttons: (Array.isArray(b.buttons) ? b.buttons : []).filter(x => x && x.name != null).map(x => ({ name: String(x.name), visible: x.visible !== false }))
+    });
+  });
+  labBtnRender();
+}
+const labBtnScript = sid => labBtn.list.find(s => s.sid === sid) || (labBtn.list.push({ sid, name: sid, enabled: true, buttons: [] }), labBtn.list[labBtn.list.length - 1]);
+function labBtnRender() {
+  const pop = document.getElementById('btnPop'), cnt = document.getElementById('btnBtnN');
+  if (!pop || !cnt) return;
+  const esc = x => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const chip = (s, b) => `<button type="button" class="bp-btn" data-sid="${esc(s.sid)}" data-name="${esc(b.name)}" title="${esc(b.name)}">${esc(b.name)}</button>`;
+  let vis = 0, html = '';
+  labBtn.list.filter(s => s.enabled).forEach(s => {
+    const v = s.buttons.filter(b => b.visible), h = s.buttons.filter(b => !b.visible);
+    if (!v.length && !h.length) return;
+    vis += v.length;
+    html += `<div class="bp-sc"><div class="bp-name">${esc(s.name)}</div>`
+      + (v.length ? `<div class="bp-row">${v.map(b => chip(s, b)).join('')}</div>` : '')
+      + (h.length ? `<details class="bp-hid"><summary>Nút ẩn (${h.length})</summary><div class="bp-row">${h.map(b => chip(s, b)).join('')}</div></details>` : '')
+      + '</div>';
+  });
+  pop.innerHTML = html || '<div class="bp-empty">Chưa có nút script nào. Card/script đã nạp không khai báo trường <b>button</b> (hoặc script chưa chạy xong — bấm <b>Chạy</b>).</div>';
+  cnt.textContent = vis;
+  document.getElementById('btnBtn').classList.toggle('has', vis > 0);
+}
+function labBtnFire(sid, name) {
+  let w = null;
+  try { w = $('#fr').contentWindow; } catch (_) {}
+  if (!w || typeof w.__emit !== 'function' || !w.__labBtn) return toast('Chưa chạy card — bấm Chạy trước rồi thử lại.', true);
+  const sc = labBtn.list.find(s => s.sid === sid);
+  const ev = w.__labBtn.event(sid, name);
+  const n = w.__listenerCount(ev);
+  log(`Bấm nút script "${name}"${sc ? ' (' + sc.name + ')' : ''} → ${n} listener`, n ? 'ok' : '');
+  if (!n) return toast(`Nút "${name}" chưa có script nào lắng nghe (script chưa chạy xong, đã lỗi, hoặc không dùng getButtonEvent). Xem Log.`, true);
+  w.__emit(ev);
 }
 
 /* ================= SILLYTAVERN HOST SHIM ================= */
@@ -1756,6 +1840,16 @@ function createHostShim(w, rawMsg, varsObj, mesId, allFloors) {
   w.replaceScriptButtons = () => {};
   w.appendInexistentScriptButtons = () => {};
   w.getButtonEvent = name => 'lab_button_' + name;
+  w.eventOnButton = (name, f) => w.eventOn(w.getButtonEvent(name), f);
+  w.__listenerCount = e => (H[e] || []).length;
+  // Cầu nối cho iframe của TỪNG script (xem buildSubIframeRuntimeScript): danh sách nút + tên sự kiện riêng theo script
+  w.__labBtn = {
+    event: (sid, n) => 'lab_button_' + sid + '_' + n,
+    get: sid => labBtnScript(sid).buttons.map(b => ({ ...b })),
+    replace: (sid, bs) => { labBtnScript(sid).buttons = (bs || []).map(b => ({ name: String(b.name), visible: b.visible !== false })); labBtnRender(); }
+  };
+  w.getAllEnabledScriptButtons = () => Object.fromEntries(labBtn.list.filter(s => s.enabled && s.buttons.some(b => b.visible))
+    .map(s => [s.sid, s.buttons.filter(b => b.visible).map(b => ({ button_id: w.__labBtn.event(s.sid, b.name), button_name: b.name }))]));
   w.getScriptInfo = () => '';
   w.replaceScriptInfo = () => {};
 
@@ -2168,6 +2262,7 @@ function doRender() {
   }
   $('#toast').innerHTML = '';
   log('──── Chạy lại ────');
+  labBtnInit();
   const fr = $('#fr');
   const token = ++renderToken;
   const [bg, fg] = $('#bg').value.split('|');
@@ -2193,12 +2288,13 @@ function doRender() {
     // => window.parent chính là trang ST giả lập (có #sheld, #chat .mes .mes_text, #form_sheld, #send_but...)
     const SBOX = 'allow-scripts allow-same-origin allow-modals allow-forms allow-popups allow-downloads';
     const waits = [];
-    items.forEach(it => {
+    items.forEach((it, idx) => {
       if (it.k !== 'script' || !it.on) return;
       const f = d.createElement('iframe');
       f.setAttribute('sandbox', SBOX);
       f.style.cssText = 'display:none';
       f.dataset.labScript = nm(it);
+      f.dataset.labSid = 's' + idx;
       let fin;
       const done = new Promise(res => { fin = res; });
       f.__done = fin;
@@ -2657,18 +2753,47 @@ function applyFontOverridesToObject(obj, pairs) {
       if (m) { try { JSON.parse(m[1]).forEach(x => need.add(x)); } catch {} out = out.replace(m[0], ''); }
       out = loaderFor([...need]) + out;
     } else {
-      const links = [...need].map(n => {
-        const u = gfUrl(n);
-        if (out.includes(u)) return '';
+      // Link Google Fonts PHẢI nằm TRONG khối mã (```...```) vì chỉ phần trong khối được render vào iframe TH-render;
+      // link đứng ngoài khối chỉ nạp font cho trang chat cha nên iframe không thấy.
+      const fl = [...need].map(n => ({ n, u: gfUrl(n) }));
+      fl.forEach(({ n, u }) => {   // gỡ link cũ chỉ chứa đúng font này (khác URL hiện tại) để khỏi nạp trùng
         const nameRe = encodeURIComponent(n).replace(/%20/g, '+').replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\+/g, '(?:\\+|%20)');
         const oldRe = new RegExp('<link\\b[^>]*fonts\\.googleapis\\.com/css2\\?[^>]*family=' + nameRe + '(?=[:&"\'\\s])[^>]*>\\s*', 'gi');
-        out = out.replace(oldRe, t => (t.match(/family=/gi) || []).length === 1 ? '' : t);   // chỉ gỡ link chỉ chứa đúng font này
-        return `<link rel="stylesheet" href="${u}"/>`;
-      }).join('');
-      if (links) {
-        if (/<head\b[^>]*>/i.test(out)) out = out.replace(/<head\b([^>]*)>/i, `<head$1>${links}`);
-        else out = links + out;
+        out = out.replace(oldRe, t => ((t.match(/family=/gi) || []).length === 1 && !t.includes(u)) ? '' : t);
+      });
+      // Vị trí chèn trong một đoạn HTML: sau <head>, không có thì sau <body> (KHÔNG chen giữa ``` và <body>: card có regex
+      // chuẩn hóa dựa vào "```\n<body>" liền nhau), không có nữa thì sau <!DOCTYPE>, cuối cùng là đầu đoạn.
+      const put = seg => {
+        const add = fl.filter(x => !seg.includes(x.u)).map(x => `<link rel="stylesheet" href="${x.u}"/>`).join('');
+        if (!add) return seg;
+        const at = re => { const m = re.exec(seg); return m && m.index < 2000 ? m.index + m[0].length : -1; };
+        let p = at(/<head\b[^>]*>/i);
+        if (p < 0) p = at(/<body\b[^>]*>/i);
+        if (p < 0) { const m = /^\s*<!doctype[^>]*>/i.exec(seg); p = m ? m[0].length : 0; }
+        return seg.slice(0, p) + add + seg.slice(p);
+      };
+      // Tìm hàng rào ```: đầu dòng, hoặc dính liền sau dấu ">" (vd: <link/>```\n<body>)
+      const FENCE = /(^|[\n>])[ \t]*```[a-zA-Z0-9_-]*[ \t]*(?:\r?\n|$)/g;
+      const toks = [...out.matchAll(FENCE)].map(m => ({ s: out.indexOf('```', m.index + m[1].length), e: m.index + m[0].length }));
+      const HTML_RE = /<(?:head|body|html|script|style|div|section|article)\b/i;
+      let res = '', pos = 0, hit = false;
+      for (let i = 0; i < toks.length;) {
+        const o = toks[i];
+        // đóng khối: ``` đứng ngay sau </body> / </html> (giống cách app tách khối), không có thì lấy ``` kế tiếp
+        let j = -1;
+        for (let k = i + 1; k < toks.length; k++) { if (/<\/(?:body|html)>\s*$/i.test(out.slice(0, toks[k].s))) { j = k; break; } }
+        if (j < 0 && i + 1 < toks.length) j = i + 1;
+        const bodyEnd = j >= 0 ? toks[j].s : out.length;
+        const body = out.slice(o.e, bodyEnd);
+        if (HTML_RE.test(body)) {
+          hit = true;
+          const nb = put(body);
+          if (nb !== body) { res += out.slice(pos, o.e) + nb; pos = bodyEnd; }
+        }
+        i = j >= 0 ? j + 1 : toks.length;
       }
+      if (hit) out = res + out.slice(pos);
+      else out = put(out);   // không có khối mã: HTML trần → chèn vào <head> hoặc đầu chuỗi như cũ
     }
     need.forEach(x => added.add(x));
     return out;
@@ -2765,7 +2890,11 @@ function setZoom(v){Zm=Math.max(.4,Math.min(1.5,v));var f=document.getElementByI
  if(p===100){sh.classList.remove('zoomed');f.removeAttribute('style');return}
  sh.classList.add('zoomed');f.style.cssText='width:'+(100/Zm)+'%;height:'+(100/Zm)+'%;transform:scale('+Zm+');transform-origin:0 0';}
 function zoomOpen(o){document.getElementById('zoomPop').classList.toggle('on',o);document.getElementById('zoomBtn').setAttribute('aria-expanded',o)}
-document.getElementById('zoomBtn').onclick=function(e){e.stopPropagation();zoomOpen(!document.getElementById('zoomPop').classList.contains('on'))};
+function btnOpen(o){document.getElementById('btnPop').classList.toggle('on',o);document.getElementById('btnBtn').setAttribute('aria-expanded',o)}
+document.getElementById('btnBtn').onclick=function(e){e.stopPropagation();zoomOpen(false);btnOpen(!document.getElementById('btnPop').classList.contains('on'))};
+document.getElementById('btnPop').addEventListener('click',function(e){var b=e.target.closest('.bp-btn');if(!b)return;e.stopPropagation();labBtnFire(b.dataset.sid,b.dataset.name);btnOpen(false)});
+document.addEventListener('click',function(e){if(!e.target.closest('#btnPop'))btnOpen(false)});
+document.getElementById('zoomBtn').onclick=function(e){e.stopPropagation();btnOpen(false);zoomOpen(!document.getElementById('zoomPop').classList.contains('on'))};
 document.getElementById('zoomR').oninput=function(){setZoom(this.value/100)};
 document.getElementById('zoomReset').onclick=function(){setZoom(1)};
 document.querySelectorAll('#zoomPop [data-z]').forEach(function(b){b.onclick=function(){setZoom(Zm+ +b.dataset.z/100)}});
